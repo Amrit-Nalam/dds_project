@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Chat Test</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        #messages {
+            border: 1px solid #ddd;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Global Chat Test</h1>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Type your message..." />
+    <button onclick="sendMessage()">Send</button>
+
+    <script>
+        const socket = io.connect('http://127.0.0.1:5000');
+        const username = prompt('Enter your username') || 'Anonymous';
+
+        // Debug connection
+        socket.on('connect', () => {
+            console.log('Connected to Socket.IO server');
+            socket.emit('join_room', { username });
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from Socket.IO server');
+        });
+
+        // Display messages
+        socket.on('message', (data) => {
+            console.log('Message received:', data); // Debug
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML += `<p><strong>${data.user}:</strong> ${data.msg}</p>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the latest message
+        });
+
+        // Send a message
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            if (message) {
+                socket.emit('send_message', { username, message });
+                messageInput.value = ''; // Clear input after sending
+            } else {
+                alert('Message cannot be empty');
+            }
+        }
+
+        // Leave room on close
+        window.addEventListener('beforeunload', () => {
+            socket.emit('leave_room', { username });
+        });
+    </script>
+</body>
+</html>
