@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendor Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Vendor Dashboard</h1>
+        <p>Welcome, {{ current_user.Username }}!</p>
+        <button id="logoutButton" class="btn btn-danger mb-3" onclick="logout()">Logout</button>
+
+        <!-- Add Menu Item Section -->
+        <h2>Add Menu Item</h2>
+        <form id="addMenuForm" class="mb-4">
+            <div class="mb-3">
+                <label for="FoodItem" class="form-label">Food Item:</label>
+                <input type="text" id="FoodItem" name="FoodItem" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label for="Price" class="form-label">Price:</label>
+                <input type="number" step="0.01" id="Price" name="Price" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label for="Description" class="form-label">Description:</label>
+                <textarea id="Description" name="Description" class="form-control"></textarea>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="addMenuItem()">Add Item</button>
+        </form>
+
+        <!-- Existing Menu Items Section -->
+        <h2>Existing Menu Items</h2>
+        <div id="menuItems" class="mb-5">
+            <!-- Menu items will be rendered here -->
+        </div>
+
+        <!-- Orders Section -->
+        <h2>Orders</h2>
+        <div id="orders" class="mb-5">
+            <!-- Orders will be displayed here -->
+        </div>
+
+        <!-- Chat Section -->
+        <div class="mt-4">
+            <a href="/chat?username=Vendor-{{ current_user.Username }}" class="btn btn-primary">Join Chat</a>
+        </div>
+        <!-- <h2>Chat</h2>
+        <div id="chat">
+            <h3>Available Vendors</h3>
+            <select id="chatRoomSelect" class="form-select">
+                
+            </select>
+            <button class="btn btn-primary mt-2" onclick="joinRoom()">Join Chat</button>
+            
+            <div id="chatBox" style="display:none;">
+                <h4 id="chatRoomTitle"></h4>
+                <div id="messages" class="border rounded p-3 mb-3" style="height: 300px; overflow-y: auto;"></div>
+                <div>
+                    <input type="text" id="messageInput" class="form-control" placeholder="Type your message...">
+                    <button class="btn btn-success mt-2" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div> -->
+        
+        
+
+    <script>
+        const socket = io({ autoConnect: false }); // Ensure Socket.IO server is running
+        let currentRoom = null;
+        
+        document.addEventListener("DOMContentLoaded", function () {
+            fetch("/chat/rooms")
+                .then(response => response.json())
+                .then(data => {
+                    const roomSelect = document.getElementById("chatRoomSelect");
+                    data.rooms.forEach(room => {
+                        const option = document.createElement("option");
+                        option.value = room;
+                        option.text = room;
+                        roomSelect.add(option);
+                    });
+                });
+        });
+            // Logout Functionality
+        async function logout() {
+            try {
+                const response = await fetch('/logout', { method: 'GET' });
+                if (response.ok) {
+                    window.location.href = '/'; // Redirect to the homepage
+                } else {
+                    alert('Error during logout. Please try again.');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Failed to logout. Please try again.');
+            }
+        }
+
+        // Fetch and display menu items
+        async function fetchMenuItems() {
+            try {
+                const response = await fetch('/menu', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+                const result = await response.json();
+
+                const menuItemsDiv = document.getElementById('menuItems');
+                menuItemsDiv.innerHTML = ''; // Clear existing items
+
+                if (result.menu && result.menu.length > 0) {
+                    result.menu.forEach(item => {
+                        const menuItemDiv = document.createElement('div');
+                        menuItemDiv.classList.add('card', 'mb-3');
+                        menuItemDiv.innerHTML = `
+                            <div class="card-body">
+                                <h5 class="card-title">${item.FoodItem}</h5>
+                                <p class="card-text">Price: $${item.Price}</p>
+                                <p class="card-text">${item.Description}</p>
+                                <button class="btn btn-primary btn-sm me-2" onclick="editMenuItem(${item.MenuID})">Edit</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteMenuItem(${item.MenuID})">Delete</button>
+                            </div>
+                        `;
+                        menuItemsDiv.appendChild(menuItemDiv);
+                    });
+                } else {
+                    menuItemsDiv.innerHTML = '<p>No menu items found.</p>';
+                }
+            } catch (error) {
+                console.error('Error fetching menu items:', error);
+                alert('Failed to fetch menu items. Please try again.');
+            }
+        }
+
+        // Fetch and display orders
+        async function fetchOrders() {
+            try {
+                const response = await fetch('/orders', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+                const result = await response.json();
+
+                const ordersDiv = document.getElementById('orders');
+                ordersDiv.innerHTML = ''; // Clear existing orders
+
+                if (result.orders && result.orders.length > 0) {
+                    result.orders.forEach((order, index) => {
+                        const orderCard = document.createElement('div');
+                        orderCard.classList.add('card', 'mb-3');
+                        orderCard.innerHTML = `
+                            <div class="card-body">
+                        <h5 class="card-title">Order #${index + 1}</h5>
+                        <p class="card-text">Menu Item: ${order.MenuItem}</p>
+                        <p class="card-text">Quantity: ${order.Quantity}</p>
+                        <p class="card-text">Total Price: $${order.TotalPrice}</p>
+                        <p class="card-text">Status: ${order.OrderStatus}</p>
+                        <p class="card-text">Order Date: ${order.OrderDate}</p>
+                        <p class="card-text">Customer: ${order.CustomerName}</p>
+                        <button class="btn btn-primary btn-sm mt-2" onclick="updateOrderStatus(${order.OrderID})">Update Status</button>
+                    </div>
+                        `;
+                        ordersDiv.appendChild(orderCard);
+                    });
+                } else {
+                    ordersDiv.innerHTML = '<p>No orders found.</p>';
+                }
+            } catch (error) {
+                console.error('Error fetching orders:', error);
+                alert('Failed to fetch orders. Please try again.');
+            }
+        }
+        // Add a menu item
+async function addMenuItem() {
+    const foodItem = document.getElementById('FoodItem').value.trim();
+    const price = parseFloat(document.getElementById('Price').value.trim());
+    const description = document.getElementById('Description').value.trim();
+
+    if (!foodItem || isNaN(price) || price <= 0) {
+        alert('Please provide valid Food Item and Price.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/menu', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ FoodItem: foodItem, Price: price, Description: description }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert(result.message || 'Menu item added successfully.');
+            fetchMenuItems(); // Refresh menu items
+        } else {
+            alert(result.error || 'Failed to add menu item.');
+        }
+    } catch (error) {
+        console.error('Error adding menu item:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+// Edit an existing menu item
+async function editMenuItem(menuID) {
+    const foodItem = prompt('Enter new Food Item (leave blank to keep current):');
+    const price = prompt('Enter new Price (leave blank to keep current):');
+    const description = prompt('Enter new Description (leave blank to keep current):');
+
+    if (foodItem === null && price === null && description === null) return;
+
+    const payload = {};
+    if (foodItem) payload.FoodItem = foodItem.trim();
+    if (price && !isNaN(parseFloat(price))) payload.Price = parseFloat(price.trim());
+    if (description) payload.Description = description.trim();
+
+    try {
+        const response = await fetch(`/menu/${menuID}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert(result.message || 'Menu item updated successfully.');
+            fetchMenuItems(); // Refresh menu items
+        } else {
+            alert(result.error || 'Failed to update menu item.');
+        }
+    } catch (error) {
+        console.error('Error editing menu item:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+// Update order status
+async function updateOrderStatus(orderID) {
+    const newStatus = prompt('Enter new status (Pending, Completed, Cancelled):');
+    if (!['Pending', 'Completed', 'Cancelled'].includes(newStatus)) {
+        alert('Invalid status. Please enter one of the following: Pending, Completed, Cancelled.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/orders/${orderID}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ OrderStatus: newStatus }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert(result.message || 'Order status updated successfully.');
+            fetchOrders(); // Refresh orders
+        } else {
+            alert(result.error || 'Failed to update order status.');
+        }
+    } catch (error) {
+        console.error('Error updating order status:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+// Delete a menu item
+async function deleteMenuItem(menuID) {
+    if (!confirm('Are you sure you want to delete this menu item?')) return;
+
+    try {
+        const response = await fetch(`/menu/${menuID}`, { method: 'DELETE' });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert(result.message || 'Menu item deleted successfully.');
+            fetchMenuItems(); // Refresh menu items
+        } else {
+            alert(result.error || 'Failed to delete menu item.');
+        }
+    } catch (error) {
+        console.error('Error deleting menu item:', error);
+        alert('An error occurred. Please try again.');
+    }
+}
+
+
+        // Fetch chat rooms
+        async function fetchChatRooms() {
+            try {
+                const response = await fetch('/chat/rooms');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const rooms = await response.json();
+                const roomSelect = document.getElementById('customerSelect');
+                roomSelect.innerHTML = rooms.map(room => `<option value="${room.id}">${room.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error fetching chat rooms:', error);
+                alert('Failed to load chat rooms. Please try again.');
+            }
+        }
+        function joinChat() {
+        window.location.href = "/chat"; // Redirect to the chat app
+    }
+
+        document.addEventListener('DOMContentLoaded', () => {
+    joinRoom(); // Automatically join the global chat room when the page loads
+});
+        // Chat functionality
+        function joinRoom() {
+            const room = document.getElementById("chatRoomSelect").value;
+            if (!room) return alert("Select a room to join!");
+
+            currentRoom = room;
+            socket.connect();
+            socket.emit("user_join", { username: "User", room });
+            
+            document.getElementById("chatRoomTitle").innerText = `Chat - ${room}`;
+            document.getElementById("chatBox").style.display = "block";
+        }
+
+
+
+    function leaveRoom() {
+        if (currentRoom) {
+            socket.emit('leave_room', { room: currentRoom });
+            currentRoom = null;
+        }
+    }
+    function sendMessage() {
+    const message = document.getElementById("messageInput").value;
+    if (!message) return;
+
+    socket.emit("new_message", { room: currentRoom, message });
+    document.getElementById("messageInput").value = "";
+}
+
+        // Real-time updates
+        socket.on("chat", data => {
+    const messagesDiv = document.getElementById("messages");
+    const messageElement = document.createElement("p");
+    messageElement.innerText = `${data.username}: ${data.message}`;
+    messagesDiv.appendChild(messageElement);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+});
+
+        // Fetch menu items, orders, and chat rooms on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchMenuItems();
+            fetchOrders();
+            fetchChatRooms();
+        });
+    </script>
+</body>
+</html>

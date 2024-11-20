@@ -1,2 +1,1 @@
-# dds_project
-Catering Management System
+**DDS Project** - CaterQuest

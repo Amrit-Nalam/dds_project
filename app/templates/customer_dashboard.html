@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Customer Dashboard</h1>
+        <p>Welcome, {{ current_user.Username }}!</p>
+        <button id="logoutButton" class="btn btn-danger mb-3" onclick="logout()">Logout</button>
+
+        <!-- Vendor Listing with Filters -->
+        <h2>Vendor Listing</h2>
+        <form id="filterForm" class="mb-3">
+            <div class="row">
+                <div class="col-md-4">
+                    <input type="text" id="location" class="form-control" placeholder="Location">
+                </div>
+                <div class="col-md-4">
+                    <input type="number" step="0.1" id="min_rating" class="form-control" placeholder="Minimum Rating">
+                </div>
+                <div class="col-md-4">
+                    <input type="text" id="vendor_name" class="form-control" placeholder="Vendor Name">
+                </div>
+            </div>
+            <button type="button" class="btn btn-primary mt-3" onclick="fetchVendors()">Search</button>
+        </form>
+
+        <div id="vendorList" class="mt-4">
+            <!-- Vendors will be displayed here -->
+        </div>
+
+        <!-- Cart Section -->
+        <h2 class="mt-5">Cart</h2>
+        <div id="cart" class="mt-4">
+            <p id="cartInfo">Cart is empty. Add items to your cart.</p>
+            <button class="btn btn-success mt-3" id="placeOrderButton" style="display: none;" onclick="placeOrder()">Place Order</button>
+            <button class="btn btn-danger mt-3" id="clearCartButton" style="display: none;" onclick="clearCart()">Clear Cart</button>
+        </div>
+        <div class="mt-4">
+            <a href="/chat?username=Customer-{{ current_user.Username }}" class="btn btn-primary">Join Chat</a>
+        </div>
+        <!-- My Orders Section -->
+        <h2 class="mt-5">My Orders</h2>
+        <div id="orderList" class="mt-4">
+            <!-- Orders will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        const socket = io("http://127.0.0.1:5000", {
+            query: { token: localStorage.getItem("UserID") },
+        });
+
+        socket.on('connect', () => console.log('Connected to Socket.IO server'));
+        socket.on('disconnect', () => console.log('Disconnected from Socket.IO server'));
+
+        let cart = [];
+        let cartVendorID = null;
+
+        // Fetch vendors and display them
+        async function fetchVendors() {
+            const location = document.getElementById('location').value;
+            const minRating = document.getElementById('min_rating').value;
+            const vendorName = document.getElementById('vendor_name').value;
+
+            let url = '/vendors?';
+            if (location) url += `location=${encodeURIComponent(location)}&`;
+            if (minRating) url += `min_rating=${encodeURIComponent(minRating)}&`;
+            if (vendorName) url += `vendor_name=${encodeURIComponent(vendorName)}&`;
+
+            try {
+                const response = await fetch(url, { method: 'GET' });
+                const vendors = await response.json();
+
+                const vendorListDiv = document.getElementById('vendorList');
+                vendorListDiv.innerHTML = ''; // Clear previous results
+
+                vendors.forEach(vendor => {
+                    const vendorCard = document.createElement('div');
+                    vendorCard.classList.add('card', 'mb-3');
+                    vendorCard.innerHTML = `
+    <div class="card-body">
+        <h5 class="card-title">${vendor.VendorName || "N/A"}</h5>
+        <p class="card-text"><strong>Location:</strong> ${vendor.Location || "N/A"}</p>
+        <p class="card-text"><strong>Phone:</strong> ${vendor.Phone || "N/A"}</p>
+        <p class="card-text"><strong>Email:</strong> ${vendor.Email || "N/A"}</p>
+        <p class="card-text"><strong>Address:</strong> ${vendor.Address || "N/A"}</p>
+        <p class="card-text"><strong>Average Rating:</strong> ${vendor.avg_rating || 'No ratings yet'}</p>
+        
+        <h6>Menu:</h6>
+        <ul>
+            ${vendor.Menu.map(item => `
+                <li>${item.FoodItem} - $${item.Price}
+                    <button class="btn btn-sm btn-primary ms-3" onclick="addToCart(${vendor.VendorID}, ${item.MenuID}, '${item.FoodItem}', ${item.Price})">Add to Cart</button>
+                </li>
+            `).join('')}
+        </ul>
+        
+        <h6 class="mt-3">Reviews:</h6>
+        <ul>
+            ${vendor.Reviews.map(review => `
+                <li><strong>${review.CustomerName}:</strong> ${review.Stars} stars - ${review.Description}</li>
+            `).join('') || '<li>No reviews yet.</li>'}
+        </ul>
+
+        <button class="btn btn-primary btn-sm mt-3" onclick="addReview(${vendor.VendorID})">Add Review</button>
+    </div>
+                    `;
+                    vendorListDiv.appendChild(vendorCard);
+                });
+            } catch (error) {
+                console.error('Error fetching vendors:', error);
+            }
+        }
+        async function addReview(vendorID) {
+            const stars = prompt('Enter stars (1-5):');
+            const description = prompt('Enter your review:');
+
+            if (!stars || isNaN(stars) || stars < 1 || stars > 5) {
+                alert("Please provide a valid rating between 1 and 5.");
+                return;
+            }
+
+            if (!description || description.trim() === "") {
+                alert("Please provide a review description.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`/vendors/${vendorID}/review`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ Stars: parseInt(stars), Description: description.trim() }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(result.message || "Review added successfully.");
+                    fetchVendors();
+                } else {
+                    alert(`Error adding review: ${result.error || "Unknown error occurred"}`);
+                }
+            } catch (error) {
+                console.error('Error adding review:', error);
+                alert('Failed to add review. Please try again.');
+            }
+        }
+        // Add item to the cart
+        function addToCart(vendorID, menuID, foodItem, price) {
+            if (cartVendorID && cartVendorID !== vendorID) {
+                alert("You can only add items from one vendor at a time. Clear the cart to order from a different vendor.");
+                return;
+            }
+
+            const quantity = parseInt(prompt(`Enter quantity for ${foodItem}:`));
+            if (!quantity || isNaN(quantity) || quantity <= 0) {
+                alert("Please enter a valid quantity.");
+                return;
+            }
+
+            cartVendorID = vendorID;
+            const existingItem = cart.find(item => item.menuID === menuID);
+
+            if (existingItem) {
+                existingItem.quantity += quantity;
+            } else {
+                cart.push({ menuID, foodItem, price, quantity });
+            }
+
+            updateCartUI();
+        }
+
+        // Update the cart UI
+        function updateCartUI() {
+            const cartInfo = document.getElementById('cartInfo');
+            const placeOrderButton = document.getElementById('placeOrderButton');
+            const clearCartButton = document.getElementById('clearCartButton');
+
+            if (cart.length === 0) {
+                cartInfo.textContent = "Cart is empty. Add items to your cart.";
+                placeOrderButton.style.display = "none";
+                clearCartButton.style.display = "none";
+            } else {
+                cartInfo.innerHTML = `
+                    <ul>
+                        ${cart.map(item => `
+                            <li>
+                                ${item.foodItem} - $${item.price} x ${item.quantity} = $${(item.price * item.quantity).toFixed(2)}
+                                <button class="btn btn-danger btn-sm ms-3" onclick="removeFromCart(${item.menuID})">Remove</button>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+                placeOrderButton.style.display = "inline-block";
+                clearCartButton.style.display = "inline-blocks";
+            }
+        }
+
+        // Remove item from the cart
+        function removeFromCart(menuID) {
+            cart = cart.filter(item => item.menuID !== menuID);
+            if (cart.length === 0) cartVendorID = null;
+            updateCartUI();
+        }
+
+        // Clear the cart
+        function clearCart() {
+            cart = [];
+            cartVendorID = null;
+            updateCartUI();
+        }
+        function joinChat() {
+    const username = "{{ current_user.Username }}"; // Pass the logged-in user's name
+    window.location.href = `/chat?username=${encodeURIComponent(username)}`;
+}
+
+
+        // Place order
+        async function placeOrder() {
+            if (cart.length === 0) {
+                alert("Your cart is empty!");
+                return;
+            }
+
+            try {
+                const response = await fetch('/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vendorID: cartVendorID, items: cart }),
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message || "Order placed successfully.");
+                    clearCart();
+                    fetchOrders();
+                } else {
+                    alert(`Error placing order: ${result.error || "Unknown error occurred"}`);
+                }
+            } catch (error) {
+                console.error('Error placing order:', error);
+                alert('Failed to place order. Please try again.');
+            }
+        }
+
+        // Fetch and display orders
+        async function fetchOrders() {
+            try {
+                const response = await fetch('/orders/customer', { method: 'GET' });
+                const orders = await response.json();
+
+                const orderListDiv = document.getElementById('orderList');
+                orderListDiv.innerHTML = ''; // Clear previous results
+
+                if (orders.length === 0) {
+                    orderListDiv.innerHTML = '<p>No orders found.</p>';
+                    return;
+                }
+
+                orders.forEach(order => {
+                    const orderCard = document.createElement('div');
+                    orderCard.classList.add('card', 'mb-3');
+                    orderCard.innerHTML = `
+                        <div class="card-body">
+                            <h5 class="card-title">Order #${order.OrderID}</h5>
+                            <p class="card-text"><strong>Items:</strong> ${order.MenuItem}</p>
+                            <p class="card-text"><strong>Quantity:</strong> ${order.Quantity}</p>
+                            <p class="card-text"><strong>Total Price:</strong> $${order.TotalPrice}</p>
+                            <p class="card-text"><strong>Status:</strong> ${order.OrderStatus}</p>
+                            <p class="card-text"><strong>Date:</strong> ${order.OrderDate}</p>
+                        </div>
+                    `;
+                    orderListDiv.appendChild(orderCard);
+                });
+            } catch (error) {
+                console.error('Error fetching orders:', error);
+                alert('Failed to fetch orders. Please try again.');
+            }
+        }
+
+
+        async function logout() {
+    try {
+        const response = await fetch('/logout', { method: 'POST' }); // Match the HTTP method used in your backend route
+        if (response.ok) {
+            window.location.href = '/'; // Redirect to the homepage after successful logout
+        } else {
+            const result = await response.json();
+            alert(result.error || 'Logout failed. Please try again.');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        alert('Failed to logout. Please try again.');
+    }
+}
+
+        // Fetch data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchVendors();
+            fetchOrders();
+        });
+    </script>
+</body>
+</html>

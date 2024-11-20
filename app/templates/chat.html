@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask-SocketIO Chat</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #e5e5e5;
+        }
+
+        #chat {
+            width: 50%;
+        }
+
+        #chat input {
+            width: 99%;
+        }
+
+        ul {
+            height: 500px;
+            background-color: white;
+            overflow-y: scroll;
+        }
+
+        li {
+            list-style: none;
+        }
+
+        #landing {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat">
+
+        <h3>Welcome, {{ username }}!</h3>
+        <ul id="chat-messages">
+        </ul>
+        <input type="text" id="message" placeholder="Enter a Message">
+    </div>
+    <script>
+        const username = "{{ username }}";  // Username embedded from Flask
+
+        const socket = io({autoConnect: false});
+        socket.connect();
+
+        socket.on("connect", function() {
+            socket.emit("user_join", username);
+        });
+
+        document.getElementById("message").addEventListener("keyup", function (event) {
+            if (event.key === "Enter") {
+                let message = document.getElementById("message").value;
+                socket.emit("new_message", message);
+                document.getElementById("message").value = "";
+            }
+        });
+
+        socket.on("chat", function(data) {
+            let ul = document.getElementById("chat-messages");
+            let li = document.createElement("li");
+            li.appendChild(document.createTextNode(data["username"] + ": " + data["message"]));
+            ul.appendChild(li);
+            ul.scrollTop = ul.scrollHeight;
+        });
+    </script>
+</body>
+</html>
